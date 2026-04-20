@@ -1,79 +1,87 @@
 """
-Live Drone Detection using YOLO26
-Detects drones from a live camera feed and draws bounding boxes around them.
+Live Drone Detection on Oak-D S2
+Runs YOLOv6-nano on the camera's on-board Myriad X VPU. The Jetson only
+draws boxes, so FPS is limited by the camera/NN, not the host CPU.
+
+Model: YOLOv6-nano (COCO) pulled from the DepthAI zoo on first run and cached.
+The DEPTHAI_ZOO_CACHE_PATH env var controls where the cache lives.
 """
-#gello
+import os
+import time
+
 import cv2
-from ultralytics import YOLO
+import depthai as dai
 
 # ---------- Configuration ----------
-MODEL_PATH = "yolo26n.pt"        # Path to your YOLO26 model weights
-CAMERA_INDEX = 1                  # 0 for default webcam; change if using another camera
-CONF_THRESHOLD = 0.35             # Minimum confidence to display a detection
-IOU_THRESHOLD = 0.45              # IoU threshold for non-max suppression
-IMG_SIZE = 640                    # Inference image size
-DEVICE = "mps"                     # 0 for GPU (CUDA), "cpu" for CPU, "mps" for Apple Silicon
+MODEL_SLUG = "yolov6-nano"        # DepthAI zoo slug (RVC2 build, COCO-trained)
+CONF_THRESHOLD = 0.25             # Minimum confidence to display a detection
+FPS_TARGET = 30                   # Requested camera/NN fps
 
-# Class names that represent a drone. YOLO26n is pretrained on COCO, which has
-# "airplane" (class 4) as the closest analog. If you later fine-tune on a
-# drone-specific dataset, replace this with your drone class name(s).
-DRONE_CLASS_NAMES = {"airplane", "drone", "uav", "quadcopter"}
+# Class names that represent a drone. COCO has "airplane" (class 4) as the
+# closest analog. Leave ACCEPT_CLASSES = None to show every class.
+ACCEPT_CLASSES = None  # e.g. {"airplane", "drone", "uav", "quadcopter"}
+
+# Make sure the zoo cache dir is writable before touching depthai.
+os.environ.setdefault(
+    "DEPTHAI_ZOO_CACHE_PATH",
+    os.path.expanduser("~/.depthai_cache"),
+)
+os.makedirs(os.environ["DEPTHAI_ZOO_CACHE_PATH"], exist_ok=True)
 
 
 def main():
-    # Load the YOLO26 model
-    print(f"Loading model: {MODEL_PATH}")
-    model = YOLO(MODEL_PATH)
-    class_names = model.names  # dict: {class_id: class_name}
+    print(f"Opening Oak-D S2 and loading model '{MODEL_SLUG}' from zoo...")
+    with dai.Pipeline() as pipeline:
+        cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
 
-    # Open camera
-    cap = cv2.VideoCapture(CAMERA_INDEX)
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera index {CAMERA_INDEX}")
+        model_desc = dai.NNModelDescription(MODEL_SLUG, platform="RVC2")
+        nn = pipeline.create(dai.node.DetectionNetwork).build(
+            cam, model_desc, fps=FPS_TARGET
+        )
+        nn.setConfidenceThreshold(CONF_THRESHOLD)
+        class_names = nn.getClasses() or []
 
-    # Optional: set capture resolution
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        det_queue = nn.out.createOutputQueue()
+        frame_queue = nn.passthrough.createOutputQueue()
 
-    # Allow camera to warm up
-    import time
-    time.sleep(1.0)
+        pipeline.start()
+        print("Detection running. Press 'q' to quit.")
 
-    print("Starting detection. Press 'q' to quit.")
+        last_t = time.monotonic()
+        fps_ema = 0.0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to grab frame — exiting.")
-            break
+        while pipeline.isRunning():
+            img = frame_queue.get()
+            dets = det_queue.get()
+            if img is None or dets is None:
+                continue
 
-        # Run inference on the current frame
-        # stream=False returns a list of Results; we take the first (and only) one
-        results = model.predict(
-            source=frame,
-            conf=CONF_THRESHOLD,
-            iou=IOU_THRESHOLD,
-            imgsz=IMG_SIZE,
-            device=DEVICE,
-            verbose=False,
-        )[0]
+            frame = img.getCvFrame()
+            h, w = frame.shape[:2]
 
-        if results.boxes is not None and len(results.boxes) > 0:
-            for box in results.boxes:
-                cls_id = int(box.cls[0])
-                cls_name = class_names.get(cls_id, str(cls_id)).lower()
+            for det in dets.detections:
+                cls_id = int(det.label)
+                cls_name = (
+                    class_names[cls_id] if cls_id < len(class_names) else str(cls_id)
+                ).lower()
+                if ACCEPT_CLASSES is not None and cls_name not in ACCEPT_CLASSES:
+                    continue
                 
-                if cls_name != "phone" or cls_name != "airplane":
+                want = ["airplane", "bird", "surfboard", "cell phone", "bird", "mouse", "snowboard", "skateboard", "remote"]
+
+                if cls_name not in want:
+                    continue
+                if cls_name == "person":
                     continue
 
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                x1 = int(det.xmin * w)
+                y1 = int(det.ymin * h)
+                x2 = int(det.xmax * w)
+                y2 = int(det.ymax * h)
 
-                # Bounding box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                # Label with confidence
-                label = f"DRONE ({cls_name}) {conf:.2f}"
+                label = f"{cls_name} {det.confidence:.2f}"
                 (tw, th), baseline = cv2.getTextSize(
                     label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
                 )
@@ -94,25 +102,28 @@ def main():
                     2,
                 )
 
-        # Show FPS in the corner
-        fps = 1000.0 / max(results.speed.get("inference", 1e-3), 1e-3)
-        cv2.putText(
-            frame,
-            f"FPS: {fps:.1f}",
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 255),
-            2,
-        )
+            now = time.monotonic()
+            dt = now - last_t
+            last_t = now
+            if dt > 0:
+                inst = 1.0 / dt
+                fps_ema = inst if fps_ema == 0 else (0.9 * fps_ema + 0.1 * inst)
 
-        cv2.imshow("Drone Detection (YOLO26)", frame)
+            cv2.putText(
+                frame,
+                f"FPS: {fps_ema:.1f}",
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (0, 255, 255),
+                2,
+            )
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
+            cv2.imshow("Drone Detection (Oak-D on-device YOLOv6n)", frame)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
-    cap.release()
-    cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
