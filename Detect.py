@@ -7,10 +7,11 @@ Model: YOLOv6-nano (COCO) pulled from the DepthAI zoo on first run and cached.
 The DEPTHAI_ZOO_CACHE_PATH env var controls where the cache lives.
 """
 import os
-import time
 
 import cv2
 import depthai as dai
+
+from render import Detection, FPSCounter, draw
 
 # ---------- Configuration ----------
 MODEL_SLUG = "yolov6-nano"        # DepthAI zoo slug (RVC2 build, COCO-trained)
@@ -47,8 +48,11 @@ def main():
         pipeline.start()
         print("Detection running. Press 'q' to quit.")
 
-        last_t = time.monotonic()
-        fps_ema = 0.0
+        fps_counter = FPSCounter()
+        want = {
+            "airplane", "bird", "surfboard", "cell phone",
+            "mouse", "snowboard", "skateboard", "remote",
+        }
 
         while pipeline.isRunning():
             img = frame_queue.get()
@@ -57,8 +61,8 @@ def main():
                 continue
 
             frame = img.getCvFrame()
-            h, w = frame.shape[:2]
 
+            detections = []
             for det in dets.detections:
                 cls_id = int(det.label)
                 cls_name = (
@@ -66,58 +70,15 @@ def main():
                 ).lower()
                 if ACCEPT_CLASSES is not None and cls_name not in ACCEPT_CLASSES:
                     continue
-                
-                want = ["airplane", "bird", "surfboard", "cell phone", "bird", "mouse", "snowboard", "skateboard", "remote"]
-
                 if cls_name not in want:
                     continue
-                if cls_name == "person":
-                    continue
+                detections.append(Detection(
+                    xmin=det.xmin, ymin=det.ymin,
+                    xmax=det.xmax, ymax=det.ymax,
+                    label=cls_name, confidence=det.confidence,
+                ))
 
-                x1 = int(det.xmin * w)
-                y1 = int(det.ymin * h)
-                x2 = int(det.xmax * w)
-                y2 = int(det.ymax * h)
-
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-
-                label = f"{cls_name} {det.confidence:.2f}"
-                (tw, th), baseline = cv2.getTextSize(
-                    label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
-                )
-                cv2.rectangle(
-                    frame,
-                    (x1, y1 - th - baseline - 4),
-                    (x1 + tw + 4, y1),
-                    (0, 255, 0),
-                    -1,
-                )
-                cv2.putText(
-                    frame,
-                    label,
-                    (x1 + 2, y1 - baseline - 2),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 0, 0),
-                    2,
-                )
-
-            now = time.monotonic()
-            dt = now - last_t
-            last_t = now
-            if dt > 0:
-                inst = 1.0 / dt
-                fps_ema = inst if fps_ema == 0 else (0.9 * fps_ema + 0.1 * inst)
-
-            cv2.putText(
-                frame,
-                f"FPS: {fps_ema:.1f}",
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 255, 255),
-                2,
-            )
+            draw(frame, detections, fps_counter.tick())
 
             cv2.imshow("Drone Detection (Oak-D on-device YOLOv6n)", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):

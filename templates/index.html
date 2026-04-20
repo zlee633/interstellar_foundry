@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Interstellar Foundry — Drone Detection</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --panel: #ffffff;
+      --border: #e5e7eb;
+      --text: #111827;
+      --muted: #6b7280;
+      --header: #111111;
+      --accent: #2dd4bf;
+      --pink: #ec4899;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header.top {
+      background: var(--header);
+      color: #fff;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+    }
+    header.top .brand {
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      font-size: 20px;
+    }
+    header.top .spacer { flex: 1; }
+    header.top .live {
+      background: #064e3b;
+      color: #a7f3d0;
+      padding: 4px 10px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: calc(100vh - 50px);
+    }
+    aside.sidebar {
+      background: #fff;
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      font-size: 13px;
+    }
+    aside.sidebar .group {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    aside.sidebar ul { list-style: none; padding: 0; margin: 0; }
+    aside.sidebar li {
+      padding: 6px 8px;
+      color: var(--muted);
+      border-radius: 4px;
+    }
+    aside.sidebar li.active { color: var(--text); background: #f3f4f6; }
+
+    main.content { padding: 24px; }
+    .card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .tag {
+      background: #f3f4f6;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .card-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-section:last-child { border-bottom: 0; }
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.6px;
+      margin-bottom: 12px;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 24px;
+      padding: 10px 0;
+      align-items: start;
+    }
+    .field-row .label { font-size: 13px; font-weight: 500; }
+    .field-row .sublabel { font-size: 12px; color: var(--muted); }
+    .field-row select,
+    .field-row input {
+      width: 100%;
+      max-width: 320px;
+      padding: 6px 10px;
+      font-size: 13px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: #fff;
+    }
+
+    .test-grid {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .feed {
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+    }
+    .feed img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .labels-panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .labels-panel .tabs-inner {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .labels-panel .tabs-inner div {
+      flex: 1;
+      text-align: center;
+      padding: 10px 0;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .labels-panel .tabs-inner div.active {
+      color: var(--text);
+      font-weight: 600;
+      border-bottom: 2px solid var(--text);
+    }
+    .labels-list { padding: 4px 0; }
+    .label-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+    }
+    .label-row:hover { background: #f9fafb; }
+    .swatch {
+      width: 14px; height: 14px; border-radius: 3px;
+    }
+    .label-name { flex: 1; }
+    .label-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .empty { padding: 16px; color: var(--muted); text-align: center; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">INTERSTELLAR FOUNDRY</div>
+    <div class="spacer"></div>
+    <div class="live">&#x25CF; LIVE</div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="group">drone-detector-main</div>
+      <ul>
+        <li>pi</li>
+        <li>oak-d</li>
+        <li class="active">vision-mlmodel</li>
+      </ul>
+    </aside>
+
+    <main class="content">
+      <div class="card">
+        <div class="card-header">
+          vision-mlmodel <span class="tag">vision</span> <span class="tag">mlmodel</span>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">CONFIGURE</div>
+          <div class="field-row">
+            <div>
+              <div class="label">ML model</div>
+            </div>
+            <select><option>yolov6-nano</option></select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="label">Confidence threshold</div>
+              <div class="sublabel">Default for all labels</div>
+            </div>
+            <input type="text" value="0.25" />
+          </div>
+          <div class="field-row">
+            <div><div class="label">Depends on</div></div>
+            <select><option>oak-d</option></select>
+          </div>
+        </div>
+
+        <div class="card-section">
+          <div class="section-label">TEST</div>
+          <div class="field-row">
+            <div><div class="label">Camera</div></div>
+            <select><option>oak-d-camera</option></select>
+          </div>
+
+          <div class="test-grid">
+            <div class="feed">
+              <img src="/video_feed" alt="live feed" />
+            </div>
+            <div class="labels-panel">
+              <div class="tabs-inner">
+                <div data-tab="classifications">Classifications</div>
+                <div data-tab="labels" class="active">Labels</div>
+              </div>
+              <div class="labels-list" id="labels-list">
+                <div class="empty">Loading...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const COLORS = {
+      airplane: "#2dd4bf",
+      bird:     "#ec4899",
+      drone:    "#f59e0b",
+      person:   "#60a5fa",
+    };
+    function colorFor(label) {
+      if (COLORS[label]) return COLORS[label];
+      let h = 0;
+      for (const c of label) h = (h * 31 + c.charCodeAt(0)) % 360;
+      return `hsl(${h}, 70%, 55%)`;
+    }
+
+    let activeTab = "labels";
+    let lastData = { labels: {}, classifications: {} };
+
+    document.querySelectorAll(".tabs-inner div[data-tab]").forEach(el => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".tabs-inner div[data-tab]")
+          .forEach(d => d.classList.remove("active"));
+        el.classList.add("active");
+        activeTab = el.dataset.tab;
+        render();
+      });
+    });
+
+    function render() {
+      const list = document.getElementById("labels-list");
+      const data = lastData[activeTab] || {};
+      const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+      if (entries.length === 0) {
+        list.innerHTML = '<div class="empty">No detections</div>';
+        return;
+      }
+      const format = activeTab === "classifications"
+        ? (v) => (v * 100).toFixed(0) + "%"
+        : (v) => v;
+      list.innerHTML = entries.map(([name, v]) => `
+        <div class="label-row">
+          <div class="swatch" style="background:${colorFor(name)}"></div>
+          <div class="label-name">${name}</div>
+          <div class="label-count">${format(v)}</div>
+        </div>
+      `).join("");
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("/detections");
+        lastData = await res.json();
+        render();
+      } catch (e) {
+        // keep last state on transient error
+      }
+    }
+    refresh();
+    setInterval(refresh, 500);
+  </script>
+</body>
+</html>
