@@ -184,7 +184,7 @@ def detections():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", choices=["fake", "oak"], default="fake")
+    parser.add_argument("source", nargs="?", choices=["fake", "oak"], default="fake")
     parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--host", default="127.0.0.1")
     args = parser.parse_args()
